@@ -1,4 +1,5 @@
 import logging
+import os
 
 from dotenv import load_dotenv
 from livekit import rtc
@@ -9,11 +10,15 @@ from livekit.agents import (
     JobContext,
     JobProcess,
     cli,
-    inference,
     room_io,
 )
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
+
+from config import config
+from custom_llm import CustomLLM
+from custom_stt import CustomSTT
+from custom_tts import SparkTTSPlugin
 
 logger = logging.getLogger("agent")
 
@@ -57,26 +62,43 @@ def prewarm(proc: JobProcess):
 server.setup_fnc = prewarm
 
 
-@server.rtc_session(agent_name="my-agent")
+@server.rtc_session(agent_name="s2s")
 async def my_agent(ctx: JobContext):
     # Logging setup
     # Add any other context you want in all log entries here
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
-
-    # Set up a voice AI pipeline using OpenAI, Cartesia, Deepgram, and the LiveKit turn detector
+    # Set up a voice AI pipeline using custom components with configuration
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all available models at https://docs.livekit.io/agents/models/stt/
-        stt=inference.STT(model="deepgram/nova-3", language="multi"),
+        stt=CustomSTT(
+            ws_url=config.stt.ws_url,
+            model=config.stt.model,
+            sample_rate=config.stt.sample_rate,
+            num_channels=config.stt.num_channels,
+            language=config.stt.language,
+            api_key=os.getenv("HUOSHAN_ACCESS_TOKEN"),
+            app_id=os.getenv("HUOSHAN_APPID"),
+            format=config.stt.format,
+            bits=config.stt.bits,
+            codec=config.stt.codec,
+            seg_duration=config.stt.seg_duration,
+            streaming=config.stt.streaming,
+        ),
         # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all available models at https://docs.livekit.io/agents/models/llm/
-        llm=inference.LLM(model="openai/gpt-4.1-mini"),
+        llm=CustomLLM(
+            model=config.llm.model,
+            base_url=config.llm.base_url,
+            api_key=os.getenv("OPENAI_API_KEY"),
+        ),
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
         # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-        tts=inference.TTS(
-            model="cartesia/sonic-3", voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
+        tts=SparkTTSPlugin(
+            api_url=config.tts.api_url,
+            voice=config.tts.voice,
+            sample_rate=config.tts.sample_rate,
+            audio_format=config.tts.audio_format,
         ),
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
         # See more at https://docs.livekit.io/agents/build/turns
