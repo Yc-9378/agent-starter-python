@@ -69,23 +69,28 @@ async def my_agent(ctx: JobContext):
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
+    logger.info("Connecting to LiveKit room")
+    await ctx.connect()
+    logger.info("Connected to LiveKit room")
+
+    try:
+        stt_instance = CustomSTT(
+            seg_duration=200,
+            audio_format="pcm",
+            bits=16,
+            num_channels=1,
+            codec="raw",
+        )
+    except Exception:
+        logger.exception(
+            "Failed to initialize CustomSTT. Check HUOSHAN_ACCESS_TOKEN/HUOSHAN_APPID."
+        )
+        raise
+
     # Set up a voice AI pipeline using custom components with configuration
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        stt=CustomSTT(
-            ws_url=config.stt.ws_url,
-            model=config.stt.model,
-            sample_rate=config.stt.sample_rate,
-            num_channels=config.stt.num_channels,
-            language=config.stt.language,
-            api_key=os.getenv("HUOSHAN_ACCESS_TOKEN"),
-            app_id=os.getenv("HUOSHAN_APPID"),
-            format=config.stt.format,
-            bits=config.stt.bits,
-            codec=config.stt.codec,
-            seg_duration=config.stt.seg_duration,
-            streaming=config.stt.streaming,
-        ),
+        stt=stt_instance,
         # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
         llm=CustomLLM(
             model=config.llm.model,
@@ -132,6 +137,7 @@ async def my_agent(ctx: JobContext):
         agent=Assistant(),
         room=ctx.room,
         room_options=room_io.RoomOptions(
+            text_input=True,
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=lambda params: (
                     noise_cancellation.BVCTelephony()
@@ -142,9 +148,6 @@ async def my_agent(ctx: JobContext):
             ),
         ),
     )
-
-    # Join the room and connect to the user
-    await ctx.connect()
 
 
 if __name__ == "__main__":
